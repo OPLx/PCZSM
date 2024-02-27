@@ -1,0 +1,173 @@
+!ifndef %watcom
+!error WATCOM environment variable not set!
+!endif
+
+!ifndef %pczsm_dir
+.SILENT
+.BEFORE
+	set pczsm_empty=EMPT	# "empty" used during substitution
+
+	# Get paths MAKEFILE and makefile
+	set pczsm_build_path_upper=$(%pczsm_empty)$(__MAKEFILES__:MAKEFILE=)
+	set pczsm_build_path_lower=$(%pczsm_empty)$(__MAKEFILES__:makefile=)
+
+	# Isolate MAKEFILE and makefile
+	set pczsm_makefile_lower=$(%pczsm_build_path_upper:$(%pczsm_build_path_lower)=)
+	set pczsm_makefile_upper=$(%pczsm_build_path_lower:$(%pczsm_build_path_upper)=)
+
+	# Select correct build path (stripping out "empty" string)
+	if $(%pczsm_makefile_lower) == makefile set pczm_build_path=$(%pczsm_build_path_lower:$(%pczsm_empty)=)
+	if $(%pczsm_makefile_upper) == MAKEFILE set pczm_build_path=$(%pczsm_build_path_upper:$(%pczsm_empty)=)
+
+	# Now set proper PCZSM dir
+	set pczsm_dir=..\..\$(%pczm_build_path)
+	set pczsm_source=$(%pczsm_dir)source
+!endif
+
+!ifndef %pczsm_include
+.BEFORE
+	set pczsm_include=$(%pczsm_source)
+	set include=$(%include);$(%pczsm_include)
+!endif
+
+!ifndef %architecture
+.BEFORE
+	set architecture=16 # default to 16-bit architecture
+!endif
+
+!ifndef %configuration
+.BEFORE
+	set configuration=debug
+!endif
+
+ARCHITECTURE_DIR = X86_$(%architecture)
+
+CFLAGS = -w4 -e25 -zq -za99 -aa -bt=dos
+LINKER = wlink
+LFLAGS = # LIBPATH option quiet
+
+!ifeq %debug 1
+CFLAGS += -od -d3
+LFLAGS += debug all
+POSTFIX = D
+!else
+CFLAGS += -otexan
+POSTFIX =
+!endif
+
+!ifeq %architecture 32
+CC		= wcc386
+SYSTEM	= PMODEW
+CFLAGS	+= -3r -mf
+!else
+CC		= wcc
+SYSTEM	= DOS
+CFLAGS	+= -ml
+!endif
+
+MAKE = wmake -h -f $(%pczsm_dir)makefile
+
+OBJS = irq.obj keyboard.obj main.obj ram.obj saa1099.obj saaym.obj timer.obj ym2151.obj zsm.obj
+
+PROJECT = PCZSM
+PRODUCT = $(PROJECT)$(%architecture)$(POSTFIX)
+
+#help : .SYMBOLIC
+#	@-echo Usage:
+#	@-echo wmake -f [path_to_makefile] [target]
+#	@-echo Where target should be one of:
+#	@-echo   all              - build all     (16 and 32-bit)
+#	@-echo   all-32           - build all     (32-bit)
+#	@-echo   all-16           - build all     (16-bit)
+#	@-echo   release          - build release (16 and 32-bit)
+#	@-echo   release-32       - build release (32-bit)
+#	@-echo   release-16       - build release (16-bit)
+#	@-echo   debug            - build debug   (16 and 32-bit)
+#	@-echo   debug-32         - build debug   (32-bit)
+#	@-echo   debug-16         - build debug   (16-bit)
+#	@-echo   clean            - clean all     (16 and 32-bit)
+#	@-echo   clean-release    - clean release (16 and 32-bit)
+#	@-echo   clean-release-32 - clean release (32-bit)
+#	@-echo   clean-release-16 - clean release (16-bit)
+#	@-echo   clean-debug      - clean debug   (16 and 32-bit)
+#	@-echo   clean-debug-32   - clean debug   (32-bit)
+#	@-echo   clean-debug-16   - clean debug   (16-bit)
+
+.c:  $(%pczsm_source)
+
+.c.obj : .autodepend
+   $(CC) $(CFLAGS) $<
+
+$(PRODUCT).EXE : $(OBJS)
+	%write $(PRODUCT).lnk NAME    $@
+	%write $(PRODUCT).lnk SYSTEM  $(SYSTEM)
+	%write $(PRODUCT).lnk OPTION  map
+	%write $(PRODUCT).lnk FILE    { $< }
+	$(LINKER) $(LFLAGS) @$(PRODUCT).lnk
+
+delete-debug-16 delete-debug-32 delete-release-16 delete-release-32 : .SYMBOLIC
+	@-set BUILD_DIR = $(%configuration)\$(ARCHITECTURE_DIR)	
+    @-if exist $(%BUILD_DIR)\*.obj del $(%BUILD_DIR)\*.obj 
+	@-if exist $(%BUILD_DIR)\*.exe del $(%BUILD_DIR)\*.exe
+	@-if exist $(%BUILD_DIR)\*.err del $(%BUILD_DIR)\*.err
+	@-if exist $(%BUILD_DIR)\*.map del $(%BUILD_DIR)\*.map
+	@-if exist $(%BUILD_DIR)\*.lnk del $(%BUILD_DIR)\*.lnk
+
+build-debug-16 build-debug-32 build-release-16 build-release-32 : .SYMBOLIC
+	@-if not exist $(%configuration) mkdir $(%configuration)
+	@-cd $(%configuration)
+	@-if not exist $(ARCHITECTURE_DIR) mkdir $(ARCHITECTURE_DIR)
+	@-cd $(ARCHITECTURE_DIR)
+	@$(MAKE)
+	@-cd ..
+	@-cd ..
+
+set-architecture-debug-16 set-architecture-release-16 : .SYMBOLIC
+	@-set architecture=16
+
+set-architecture-debug-32 set-architecture-release-32 : .SYMBOLIC
+	@-set architecture=32
+
+set-debug-16 set-debug-32 : .SYMBOLIC
+	@-set debug=1
+	@-set configuration=debug
+
+set-release-16 set-release-32 : .SYMBOLIC
+	@-set debug=
+	@-set configuration=release
+
+clean-debug-16 : set-architecture-debug-16 delete-debug-16 .SYMBOLIC
+	@echo Cleaned DEBUG-16 target.
+
+clean-debug-32 : set-architecture-debug-32 delete-debug-32 .SYMBOLIC
+	@echo Cleaned DEBUG-32 target.
+	 
+clean-debug : clean-debug-16 clean-debug-32 .SYMBOLIC
+
+clean-release-16 : set-release-16 set-architecture-release-16 delete-release-16 .SYMBOLIC
+	@echo Cleaned RELEASE-16 target.
+
+clean-release-32 : set-release-32 set-architecture-release-32 delete-release-32 .SYMBOLIC
+	@echo Cleaned RELEASE-32 target.
+	
+clean-release : clean-release-16 clean-release-32 .SYMBOLIC
+	
+clean : clean-debug clean-release .SYMBOLIC
+
+debug-16 : set-debug-16 set-architecture-debug-16 build-debug-16 .SYMBOLIC
+
+debug-32 : set-debug-32 set-architecture-debug-32 build-debug-32 .SYMBOLIC
+
+debug : debug-16 debug-32 .SYMBOLIC
+
+release-16 : set-release-16 set-architecture-release-16 build-release-16 .SYMBOLIC
+
+release-32 : set-release-32 set-architecture-release-32 build-release-32 .SYMBOLIC
+
+release : release-16 release-32 .SYMBOLIC
+
+all-16 : debug-16 release-16 .SYMBOLIC
+
+all-32 : debug-32 release-32 .SYMBOLIC
+		 
+all : debug release
